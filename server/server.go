@@ -1,13 +1,13 @@
 /**
-	server of the chat
- */
+server of the chat
+*/
 package server
 
 import (
-	"net"
-	"log"
 	"bufio"
 	"github.com/medusar/funtalk/codec"
+	"log"
+	"net"
 )
 
 type Listener interface {
