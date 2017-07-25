@@ -44,3 +44,23 @@ func (d *delimCodec) Encode(pkt Packet) ([]byte, error) {
 func (d *delimCodec) Decode(b []byte) (Packet, error) {
 	return string(b[:]), nil
 }
+
+type PacketType byte
+
+const (
+	Msg = 1
+)
+
+// header
+// |1|4|1|
+// |version|opaque|type|
+type FunPacketHeader struct {
+	Version byte
+	Opaque  int32
+	Type    PacketType
+}
+
+type FunPacket struct {
+	Header *FunPacketHeader
+	Body   []byte
+}

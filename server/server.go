@@ -13,6 +13,7 @@ import (
 
 var (
 	DecodeErr = errors.New("decode error")
+	NotCntd   = errors.New("not connected")
 )
 
 type Chan struct {
@@ -41,6 +42,17 @@ func (c *Chan) Start() {
 
 		go c.s.OnMsg(c, data)
 	}
+}
+
+func (c *Chan) Write(pkt codec.Packet) error {
+	if c.alive {
+		data, e := c.codec.Encode(pkt)
+		if e != nil {
+			return e
+		}
+		c.c.Write(data)
+	}
+	return NotCntd
 }
 
 func (c *Chan) Close() {
