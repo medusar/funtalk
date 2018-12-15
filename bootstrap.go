@@ -1,12 +1,12 @@
 package main
 
 import (
-	"net/http"
 	"github.com/gorilla/websocket"
-	"log"
-	"html/template"
 	"github.com/medusar/funtalk/talk"
 	"html"
+	"html/template"
+	"log"
+	"net/http"
 	"time"
 )
 
@@ -112,7 +112,7 @@ func startServe() {
 			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
 			talk.MsgChan <- &talk.Message{Type: talk.Online, RoomId: "1", Sender: "admin", Content: talk.OnlineList(users)}
 		case du := <-talk.UserCloseChan:
-			du.Con.Close()
+			du.Close()
 			delete(users, du.Name())
 			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: "admin", Content: du.Name() + " left room"}
 			talk.MsgChan <- &talk.Message{Type: talk.Online, RoomId: "1", Sender: "admin", Content: talk.OnlineList(users)}

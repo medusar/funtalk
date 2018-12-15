@@ -14,3 +14,4 @@ func OnlineList(users map[string]*User) []string {
 	}
 	return names
 }
+

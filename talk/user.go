@@ -12,3 +12,8 @@ type User struct {
 func (u *User) Name() string {
 	return u.Con.RemoteAddr().String()
 }
+
+func (u *User) Close() {
+	u.Con.Close()
+	close(MsgChan)
+}
