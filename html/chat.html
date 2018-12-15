@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.1.0/css/bootstrap.min.css">
+</head>
+
+<body>
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-9">
+            <div class="card" style="height: 800px;">
+                <div class="card-header">ChatGround</div>
+                <div class="card-body">
+                    <div id="chatDiv">
+
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-3">
+            <div class="card" style="min-height: 800px;">
+                <div class="card-header">Online Users</div>
+                <div class="card-body">
+                    <div>
+                        <ul class="list-group" id="onlineList">
+                            <li class="list-group-item">First item</li>
+                            <li class="list-group-item">Second item</li>
+                            <li class="list-group-item">Third item</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="input-group">
+            <textarea id="chatData" class="form-control" aria-label="With textarea" rows=4></textarea>
+            <div class="input-group-append">
+                <button class="btn  btn-primary" type="button" onclick="send();">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="https://cdn.staticfile.org/jquery/3.2.1/jquery.min.js"></script>
+<script src="https://cdn.staticfile.org/popper.js/1.12.5/umd/popper.min.js"></script>
+<script src="https://cdn.staticfile.org/twitter-bootstrap/4.1.0/js/bootstrap.min.js"></script>
+<script type="text/javascript">
+    if (!window.WebSocket) {
+        window.WebSocket = window.MozWebSocket;
+    }
+    var pingTask;
+    var socket = new WebSocket('ws://localhost:8080/im');
+    socket.onmessage = function (event) {
+        console.info("msg received", event.data);
+        handleMessage(event.data);
+    };
+    socket.onopen = function (event) {
+        console.info("websocket opend");
+        pingTask = setInterval(ping, 15000);
+    };
+    socket.onclose = function (event) {
+        console.info("websocket closed", event);
+        clearInterval(pingTask);
+    };
+    socket.onerror = function (event) {
+        console.error("WebSocket error observed", event);
+    };
+
+    function send() {
+        let data = $("#chatData").val()
+        if (data.trim().length == 0) {
+            return;
+        }
+        var msg = {Type: 'chat', Content: data};
+        socket.send(JSON.stringify(msg));
+        appendChat('You:' + escapeHtml(data));
+    }
+
+    function ping() {
+        if (socket && socket.readyState == WebSocket.OPEN) {
+            socket.send('{"Type":"ping"}');
+        }
+    }
+
+    function appendChat(content) {
+        $("#chatDiv").append('<div>' + content + '</div>');
+    }
+
+    //{"Type":"chat","RoomId":"1","Sender":"admin","Content":"127.0.0.1:49521 joined room"}
+    function handleMessage(msgJson) {
+        var msg = JSON.parse(msgJson);
+        if (msg.Type == 'chat') {
+            appendChat(msg.Sender + ':' + msg.Content);
+        } else if (msg.Type == 'online') {
+            let _html = '';
+            // '<li class="list-group-item">' + k + '</li>'
+            msg.Content.forEach(k => _html += '<li class="list-group-item">' + k + '</li>');
+            $("#onlineList").html(_html);
+        }
+    }
+
+    function escapeHtml(html) {
+        return $('<div/>').text(html).html();
+    }
+</script>
+</body>
+
+</html>

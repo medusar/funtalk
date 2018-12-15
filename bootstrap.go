@@ -6,12 +6,12 @@ import (
 	"log"
 	"html/template"
 	"github.com/medusar/funtalk/talk"
-	"fmt"
+	"html"
 )
 
 const LISTEN_ADDR = "localhost:8080"
 
-var templates = template.Must(template.ParseFiles("html/ws.html"))
+var templates = template.Must(template.ParseFiles("html/chat.html"))
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -29,7 +29,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request) {
-	err := templates.ExecuteTemplate(w, "ws.html", LISTEN_ADDR)
+	err := templates.ExecuteTemplate(w, "chat.html", LISTEN_ADDR)
 	if err != nil {
 		log.Println(err)
 	}
@@ -39,6 +39,7 @@ func serve(user *talk.User) {
 	log.Println("user:", user)
 	talk.UserOpenChan <- user
 	go read(user)
+
 	go write(user)
 }
 
@@ -61,7 +62,20 @@ func read(user *talk.User) {
 			break
 		}
 
-		talk.MsgChan <- &talk.Msg{UserName: user.Name(), Text: string(p[:])}
+		message, err := talk.FromJson(p)
+		if err != nil {
+			log.Println("error unmarshalling json", err)
+			continue
+		}
+
+		switch message.Type {
+		case talk.Chat:
+			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: user.Name(), Content: html.EscapeString(message.Content.(string))}
+		case talk.Ping:
+			// no op
+		default:
+			log.Println("unsupported message type:", message.Type)
+		}
 	}
 }
 
@@ -71,11 +85,13 @@ func startServe() {
 		select {
 		case u := <-talk.UserOpenChan:
 			users[u.Name()] = u
-			talk.MsgChan <- &talk.Msg{UserName: "admin", Text: u.Name() + " joined room, welcome!"}
+			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
+			talk.MsgChan <- &talk.Message{Type: talk.Online, RoomId: "1", Sender: "admin", Content: talk.OnlineList(users)}
 		case du := <-talk.UserCloseChan:
 			du.Con.Close()
-			talk.MsgChan <- &talk.Msg{UserName: du.Name(), Text: "left room"}
 			delete(users, du.Name())
+			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: "admin", Content: du.Name() + " left room"}
+			talk.MsgChan <- &talk.Message{Type: talk.Online, RoomId: "1", Sender: "admin", Content: talk.OnlineList(users)}
 		}
 	}
 }
@@ -83,12 +99,11 @@ func startServe() {
 func startMsgRouter() {
 	for msg := range talk.MsgChan {
 		for _, u := range talk.UserMap {
-			if u.Name() == msg.UserName {
+			if u.Name() == msg.Sender {
 				continue
 			}
 
-			message := fmt.Sprintln("[" + msg.UserName + "]: " + msg.Text)
-			u.MsgChan <- message
+			u.MsgChan <- string(msg.ToJson())
 		}
 	}
 }
