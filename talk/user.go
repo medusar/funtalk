@@ -2,6 +2,7 @@ package talk
 
 import (
 	"github.com/gorilla/websocket"
+	"fmt"
 )
 
 //User connected
@@ -24,6 +25,10 @@ func (u *User) SetName(name string) {
 // If user has authed, his name will be set
 func (u *User) HasAuthed() bool {
 	return u.name != ""
+}
+
+func (u *User) String() string {
+	return fmt.Sprintf("address:%s, name:%v", u.Con.RemoteAddr().String(), u.name)
 }
 
 func (u *User) Close() {

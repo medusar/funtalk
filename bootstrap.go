@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/gorilla/websocket"
 	"github.com/medusar/funtalk/talk"
+	"github.com/pkg/errors"
 	"html"
 	"html/template"
 	"log"
@@ -31,8 +32,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetPongHandler(pongHandler)
-	user := &talk.User{Con: conn, MsgChan: make(chan *talk.Message, 100)}
-	go serve(user)
+	user := &talk.User{Con: conn, MsgChan: make(chan *talk.Message, 100), ErrChan: make(chan error, 1)}
+	//TODO:make sure if this is needed
+	//go serve(user)
+	serve(user)
 }
 
 func pongHandler(_ string) error {
@@ -104,11 +107,12 @@ func serve(user *talk.User) {
 	go write(user)
 
 	//if no error occurs, it will block here
-	for e := <-user.ErrChan; e != nil; {
+	select {
+	case e := <-user.ErrChan:
 		log.Println("error chat", e)
+		talk.UserCloseChan <- user
 	}
 
-	talk.UserCloseChan <- user
 }
 
 func write(user *talk.User) {
@@ -148,6 +152,12 @@ func read(user *talk.User) {
 		if err != nil {
 			log.Println("error unmarshalling json", err)
 			continue
+		}
+
+		if message.Type != talk.Auth && !user.HasAuthed() {
+			log.Printf("unauthed user, message type:%v, user:%s", message.Type, user.String())
+			user.ErrChan <- errors.New("should auth first!")
+			return
 		}
 
 		switch message.Type {
