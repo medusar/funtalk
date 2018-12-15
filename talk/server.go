@@ -1,5 +1,13 @@
 package talk
 
+import (
+	"time"
+	"github.com/gorilla/websocket"
+	"log"
+	"html"
+	"errors"
+)
+
 var (
 	//Event fired when a user connected
 	UserOpenChan = make(chan *User, 100)
@@ -50,4 +58,114 @@ func AddUser(u *User) {
 	MsgChan <- &Message{Type: Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
 	// Update online user list
 	MsgChan <- &Message{Type: Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
+}
+
+func StartWsService() {
+	go handleUser()
+	go startMsgRouter()
+}
+
+func handleUser() {
+	for {
+		select {
+		case u := <-UserOpenChan:
+			AddUser(u)
+		case du := <-UserCloseChan:
+			CloseUser(du)
+		}
+	}
+}
+
+func startMsgRouter() {
+	for msg := range MsgChan {
+		for _, u := range UserMap {
+			if u.Name() == msg.Sender {
+				continue
+			}
+			//in case it blocks, we use select to set a time limit
+			select {
+			case u.MsgChan <- msg:
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	}
+}
+
+func Serve(user *User) {
+	go read(user)
+	go write(user)
+
+	//if no error occurs, it will block here
+	select {
+	case e := <-user.ErrChan:
+		log.Println("error chat", e)
+		UserCloseChan <- user
+	}
+
+}
+
+func write(user *User) {
+	for {
+		var err error
+
+		select {
+		case msg := <-user.MsgChan:
+			err = user.Con.WriteMessage(websocket.TextMessage, []byte(msg.ToJson()))
+		case <-time.After(15 * time.Second):
+			err = user.Con.WriteMessage(websocket.PingMessage, nil)
+		}
+
+		if err != nil {
+			if err != websocket.ErrCloseSent {
+				log.Printf("error: %v, user: %v \n", err, user.Name())
+			}
+			user.ErrChan <- err
+			return
+		}
+	}
+}
+
+func read(user *User) {
+	for {
+		//Can also use `user.Con.ReadJSON()`
+		_, p, err := user.Con.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.Printf("error: %v, user-agent: %v \n", err, user.Name())
+			}
+			user.ErrChan <- err
+			return
+		}
+
+		message, err := FromJson(p)
+		if err != nil {
+			log.Println("error unmarshalling json", err)
+			continue
+		}
+
+		if message.Type != Auth && !user.HasAuthed() {
+			log.Printf("unauthed user, message type:%v, user:%s", message.Type, user.String())
+			user.ErrChan <- errors.New("should auth first!")
+			return
+		}
+
+		switch message.Type {
+		case Auth:
+			//TODO: optimize
+			authParams := message.Content.(map[string]interface{})
+			if authParams != nil {
+				username := authParams["username"].(string)
+				if username != "" {
+					user.SetName(username)
+					UserOpenChan <- user
+				}
+			}
+		case Chat:
+			MsgChan <- &Message{Type: Chat, RoomId: "1", Sender: user.Name(), Content: html.EscapeString(message.Content.(string))}
+		case Ping:
+			user.MsgChan <- &Message{Type: Pong}
+		default:
+			log.Println("unsupported message type:", message.Type)
+		}
+	}
 }

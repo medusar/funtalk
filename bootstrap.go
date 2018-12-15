@@ -3,12 +3,9 @@ package main
 import (
 	"github.com/gorilla/websocket"
 	"github.com/medusar/funtalk/talk"
-	"github.com/pkg/errors"
-	"html"
 	"html/template"
 	"log"
 	"net/http"
-	"time"
 )
 
 const LISTEN_ADDR = ":8080"
@@ -35,7 +32,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	user := &talk.User{Con: conn, MsgChan: make(chan *talk.Message, 100), ErrChan: make(chan error, 1)}
 	//TODO:make sure if this is needed
 	//go serve(user)
-	serve(user)
+	talk.Serve(user)
 }
 
 func pongHandler(_ string) error {
@@ -102,115 +99,8 @@ func checkLogin(username, password string) bool {
 	return true
 }
 
-func serve(user *talk.User) {
-	go read(user)
-	go write(user)
-
-	//if no error occurs, it will block here
-	select {
-	case e := <-user.ErrChan:
-		log.Println("error chat", e)
-		talk.UserCloseChan <- user
-	}
-
-}
-
-func write(user *talk.User) {
-	for {
-		var err error
-
-		select {
-		case msg := <-user.MsgChan:
-			err = user.Con.WriteMessage(websocket.TextMessage, []byte(msg.ToJson()))
-		case <-time.After(15 * time.Second):
-			err = user.Con.WriteMessage(websocket.PingMessage, nil)
-		}
-
-		if err != nil {
-			if err != websocket.ErrCloseSent {
-				log.Printf("error: %v, user: %v \n", err, user.Name())
-			}
-			user.ErrChan <- err
-			return
-		}
-	}
-}
-
-func read(user *talk.User) {
-	for {
-		//Can also use `user.Con.ReadJSON()`
-		_, p, err := user.Con.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				log.Printf("error: %v, user-agent: %v \n", err, user.Name())
-			}
-			user.ErrChan <- err
-			return
-		}
-
-		message, err := talk.FromJson(p)
-		if err != nil {
-			log.Println("error unmarshalling json", err)
-			continue
-		}
-
-		if message.Type != talk.Auth && !user.HasAuthed() {
-			log.Printf("unauthed user, message type:%v, user:%s", message.Type, user.String())
-			user.ErrChan <- errors.New("should auth first!")
-			return
-		}
-
-		switch message.Type {
-		case talk.Auth:
-			//TODO: optimize
-			authParams := message.Content.(map[string]interface{})
-			if authParams != nil {
-				username := authParams["username"].(string)
-				if username != "" {
-					user.SetName(username)
-					talk.UserOpenChan <- user
-				}
-			}
-		case talk.Chat:
-			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: user.Name(), Content: html.EscapeString(message.Content.(string))}
-		case talk.Ping:
-			user.MsgChan <- &talk.Message{Type: talk.Pong}
-		default:
-			log.Println("unsupported message type:", message.Type)
-		}
-	}
-}
-
-func startServe() {
-	for {
-		select {
-		case u := <-talk.UserOpenChan:
-			talk.AddUser(u)
-		case du := <-talk.UserCloseChan:
-			talk.CloseUser(du)
-		}
-	}
-}
-
-func startMsgRouter() {
-	for msg := range talk.MsgChan {
-		for _, u := range talk.UserMap {
-			if u.Name() == msg.Sender {
-				continue
-			}
-
-			//in case it blocks, we use select to set a time limit
-			select {
-			case u.MsgChan <- msg:
-			case <-time.After(10 * time.Millisecond):
-			}
-		}
-	}
-}
-
 func main() {
-	go startServe()
-	go startMsgRouter()
+	talk.StartWsService()
 	http.HandleFunc("/", pageHandler)
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/im", wsHandler)
