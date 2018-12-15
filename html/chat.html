@@ -5,13 +5,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="https://cdn.staticfile.org/twitter-bootstrap/4.1.0/css/bootstrap.min.css">
+    <title>Let's go!</title>
 </head>
 
 <body>
 <div class="container-fluid">
-    <div class="row">
-        <div class="col-9">
-            <div class="card" style="height: 800px;">
+    <div class="row" style="height:70%;">
+        <div class="h-100 col-9 col-md-9">
+            <div class="h-100 card">
                 <div class="card-header">ChatGround</div>
                 <div class="card-body">
                     <div id="chatDiv">
@@ -20,15 +21,12 @@
                 </div>
             </div>
         </div>
-        <div class="col-3">
-            <div class="card" style="min-height: 800px;">
+        <div class="h-100 col-3 col-md-3 pl-0">
+            <div class="h-100 card">
                 <div class="card-header">Online Users</div>
                 <div class="card-body">
                     <div>
                         <ul class="list-group" id="onlineList">
-                            <li class="list-group-item">First item</li>
-                            <li class="list-group-item">Second item</li>
-                            <li class="list-group-item">Third item</li>
                         </ul>
                     </div>
                 </div>
@@ -36,10 +34,12 @@
         </div>
     </div>
     <div class="row">
-        <div class="input-group">
-            <textarea id="chatData" class="form-control" aria-label="With textarea" rows=4></textarea>
-            <div class="input-group-append">
-                <button class="btn  btn-primary" type="button" onclick="send();">Send</button>
+        <div class="col-12 mt-2">
+            <div class="input-group">
+                <textarea id="chatData" class="form-control" aria-label="With textarea" rows=4></textarea>
+                <div class="input-group-append">
+                    <button class="btn  btn-primary" type="button" onclick="send();">Send</button>
+                </div>
             </div>
         </div>
     </div>
@@ -51,6 +51,16 @@
     if (!window.WebSocket) {
         window.WebSocket = window.MozWebSocket;
     }
+    $(function () {
+        $(document).keyup(function (event) {
+            if (event.keyCode == 13) {
+                send();
+            }
+        });
+        let height = $(window).height();
+        $(".container-fluid").height(height);
+    });
+
     var pingTask;
     var socket = new WebSocket('ws://localhost:8080/im');
     socket.onmessage = function (event) {
@@ -64,6 +74,8 @@
     socket.onclose = function (event) {
         console.info("websocket closed", event);
         clearInterval(pingTask);
+        // reconnect
+        socket = new WebSocket('ws://localhost:8080/im');
     };
     socket.onerror = function (event) {
         console.error("WebSocket error observed", event);
@@ -77,6 +89,8 @@
         var msg = {Type: 'chat', Content: data};
         socket.send(JSON.stringify(msg));
         appendChat('You:' + escapeHtml(data));
+
+        $("#chatData").val('');
     }
 
     function ping() {
@@ -99,6 +113,9 @@
             // '<li class="list-group-item">' + k + '</li>'
             msg.Content.forEach(k => _html += '<li class="list-group-item">' + k + '</li>');
             $("#onlineList").html(_html);
+        } else if (msg.Type == 'pong') {
+            console.info("pong received")
+            //no op
         }
     }
 

@@ -11,6 +11,7 @@ const (
 	Chat   MessageType = "chat"
 	Online MessageType = "online"
 	Ping   MessageType = "ping"
+	Pong   MessageType = "pong"
 )
 
 type Message struct {

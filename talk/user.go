@@ -6,7 +6,7 @@ import (
 
 type User struct {
 	Con     *websocket.Conn
-	MsgChan chan string
+	MsgChan chan *Message
 }
 
 func (u *User) Name() string {

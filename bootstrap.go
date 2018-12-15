@@ -7,15 +7,21 @@ import (
 	"html/template"
 	"github.com/medusar/funtalk/talk"
 	"html"
+	"time"
 )
 
-const LISTEN_ADDR = "localhost:8080"
+const LISTEN_ADDR = ":8080"
 
 var templates = template.Must(template.ParseFiles("html/chat.html"))
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	CheckOrigin:     checkOrigin,
+}
+
+func checkOrigin(r *http.Request) bool {
+	return true
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -24,8 +30,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	user := &talk.User{Con: conn, MsgChan: make(chan string, 100)}
+	conn.SetPongHandler(pongHandler)
+	user := &talk.User{Con: conn, MsgChan: make(chan *talk.Message, 100)}
 	go serve(user)
+}
+
+func pongHandler(appData string) error {
+	log.Println("pong received:", appData)
+	return nil
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request) {
@@ -39,16 +51,26 @@ func serve(user *talk.User) {
 	log.Println("user:", user)
 	talk.UserOpenChan <- user
 	go read(user)
-
 	go write(user)
 }
 
 func write(user *talk.User) {
-	for msg := range user.MsgChan {
-		err := user.Con.WriteMessage(websocket.TextMessage, []byte(msg))
+	for {
+		var err error
+
+		select {
+		case msg := <-user.MsgChan:
+			err = user.Con.WriteMessage(websocket.TextMessage, []byte(msg.ToJson()))
+		case <-time.After(15 * time.Second):
+			err = user.Con.WriteMessage(websocket.PingMessage, nil)
+		}
+
 		if err != nil {
-			log.Println("error writting", err)
+			if err != websocket.ErrCloseSent {
+				log.Printf("error: %v, user: %v \n", err, user.Name())
+			}
 			talk.UserCloseChan <- user
+			return
 		}
 	}
 }
@@ -57,9 +79,11 @@ func read(user *talk.User) {
 	for {
 		_, p, err := user.Con.ReadMessage()
 		if err != nil {
-			log.Println("error reading", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.Printf("error: %v, user-agent: %v \n", err, user.Name())
+			}
 			talk.UserCloseChan <- user
-			break
+			return
 		}
 
 		message, err := talk.FromJson(p)
@@ -72,7 +96,7 @@ func read(user *talk.User) {
 		case talk.Chat:
 			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: user.Name(), Content: html.EscapeString(message.Content.(string))}
 		case talk.Ping:
-			// no op
+			user.MsgChan <- &talk.Message{Type: talk.Pong}
 		default:
 			log.Println("unsupported message type:", message.Type)
 		}
@@ -103,7 +127,11 @@ func startMsgRouter() {
 				continue
 			}
 
-			u.MsgChan <- string(msg.ToJson())
+			//in case it blocks, we use select to set a time limit
+			select {
+			case u.MsgChan <- msg:
+			case <-time.After(10 * time.Millisecond):
+			}
 		}
 	}
 }
