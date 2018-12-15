@@ -61,6 +61,8 @@
         $(".container-fluid").height(height);
     });
 
+    var username = {{.}}
+    var kick = false;
     var pingTask;
     var socket = new WebSocket('ws://localhost:8080/im');
     socket.onmessage = function (event) {
@@ -69,17 +71,26 @@
     };
     socket.onopen = function (event) {
         console.info("websocket opend");
+        sendAuth();
         pingTask = setInterval(ping, 15000);
     };
     socket.onclose = function (event) {
         console.info("websocket closed", event);
         clearInterval(pingTask);
         // reconnect
-        socket = new WebSocket('ws://localhost:8080/im');
+        if (!kick) {
+            console.info('reconnect');
+            socket = new WebSocket('ws://localhost:8080/im');
+        }
     };
     socket.onerror = function (event) {
         console.error("WebSocket error observed", event);
     };
+
+    function sendAuth() {
+        var msg = {Type: 'auth', Content: {username: username}};
+        socket.send(JSON.stringify(msg));
+    }
 
     function send() {
         let data = $("#chatData").val()
@@ -88,7 +99,7 @@
         }
         var msg = {Type: 'chat', Content: data};
         socket.send(JSON.stringify(msg));
-        appendChat('You:' + escapeHtml(data));
+        appendChat(username + ':' + escapeHtml(data));
 
         $("#chatData").val('');
     }
@@ -116,6 +127,10 @@
         } else if (msg.Type == 'pong') {
             console.info("pong received")
             //no op
+        } else if (msg.Type == 'kick') {
+            alert('you are kicked by another client');
+            kick = true;
+            socket.close()
         }
     }
 

@@ -12,6 +12,8 @@ const (
 	Online MessageType = "online"
 	Ping   MessageType = "ping"
 	Pong   MessageType = "pong"
+	Auth   MessageType = "auth"
+	Kick   MessageType = "kick"
 )
 
 type Message struct {

@@ -12,7 +12,7 @@ import (
 
 const LISTEN_ADDR = ":8080"
 
-var templates = template.Must(template.ParseFiles("html/chat.html"))
+var templates = template.Must(template.ParseFiles("html/chat.html", "html/login.html"))
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -20,7 +20,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     checkOrigin,
 }
 
-func checkOrigin(r *http.Request) bool {
+func checkOrigin(_ *http.Request) bool {
 	return true
 }
 
@@ -35,23 +35,80 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	go serve(user)
 }
 
-func pongHandler(appData string) error {
-	log.Println("pong received:", appData)
+func pongHandler(_ string) error {
 	return nil
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request) {
-	err := templates.ExecuteTemplate(w, "chat.html", LISTEN_ADDR)
+	cookie, err := r.Cookie("username")
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+		return
+	}
+	username := cookie.Value
+	err = templates.ExecuteTemplate(w, "chat.html", username)
 	if err != nil {
 		log.Println(err)
 	}
 }
 
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		err := templates.ExecuteTemplate(w, "login.html", nil)
+		if err != nil {
+			log.Println(err)
+		}
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "illegal method:"+r.Method, http.StatusBadRequest)
+		return
+	}
+
+	err := r.ParseForm()
+	if err != nil {
+		log.Println("error parsing form", err)
+		http.Error(w, "illegal form", http.StatusBadRequest)
+		return
+	}
+
+	form := r.Form
+	username := form["username"]
+	if username == nil || len(username) == 0 || username[0] == "" {
+		http.Error(w, "illegal arguments", http.StatusBadRequest)
+		return
+	}
+	password := form["password"]
+	if password == nil || len(password) == 0 || password[0] == "" {
+		http.Error(w, "illegal arguments", http.StatusBadRequest)
+		return
+	}
+
+	if checkLogin(username[0], password[0]) {
+		http.SetCookie(w, &http.Cookie{Name: "username", Value: username[0], MaxAge: 24 * 60 * 60})
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	} else {
+		//TODO: improve user experience
+		http.Error(w, "illegal arguments", http.StatusBadRequest)
+	}
+}
+
+func checkLogin(username, password string) bool {
+	//TODO: check username and password
+	return true
+}
+
 func serve(user *talk.User) {
-	log.Println("user:", user)
-	talk.UserOpenChan <- user
 	go read(user)
 	go write(user)
+
+	//if no error occurs, it will block here
+	for e := <-user.ErrChan; e != nil; {
+		log.Println("error chat", e)
+	}
+
+	talk.UserCloseChan <- user
 }
 
 func write(user *talk.User) {
@@ -69,7 +126,7 @@ func write(user *talk.User) {
 			if err != websocket.ErrCloseSent {
 				log.Printf("error: %v, user: %v \n", err, user.Name())
 			}
-			talk.UserCloseChan <- user
+			user.ErrChan <- err
 			return
 		}
 	}
@@ -77,12 +134,13 @@ func write(user *talk.User) {
 
 func read(user *talk.User) {
 	for {
+		//Can also use `user.Con.ReadJSON()`
 		_, p, err := user.Con.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 				log.Printf("error: %v, user-agent: %v \n", err, user.Name())
 			}
-			talk.UserCloseChan <- user
+			user.ErrChan <- err
 			return
 		}
 
@@ -93,6 +151,16 @@ func read(user *talk.User) {
 		}
 
 		switch message.Type {
+		case talk.Auth:
+			//TODO: optimize
+			authParams := message.Content.(map[string]interface{})
+			if authParams != nil {
+				username := authParams["username"].(string)
+				if username != "" {
+					user.SetName(username)
+					talk.UserOpenChan <- user
+				}
+			}
 		case talk.Chat:
 			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: user.Name(), Content: html.EscapeString(message.Content.(string))}
 		case talk.Ping:
@@ -104,18 +172,12 @@ func read(user *talk.User) {
 }
 
 func startServe() {
-	users := talk.UserMap
 	for {
 		select {
 		case u := <-talk.UserOpenChan:
-			users[u.Name()] = u
-			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
-			talk.MsgChan <- &talk.Message{Type: talk.Online, RoomId: "1", Sender: "admin", Content: talk.OnlineList(users)}
+			talk.AddUser(u)
 		case du := <-talk.UserCloseChan:
-			du.Close()
-			delete(users, du.Name())
-			talk.MsgChan <- &talk.Message{Type: talk.Chat, RoomId: "1", Sender: "admin", Content: du.Name() + " left room"}
-			talk.MsgChan <- &talk.Message{Type: talk.Online, RoomId: "1", Sender: "admin", Content: talk.OnlineList(users)}
+			talk.CloseUser(du)
 		}
 	}
 }
@@ -140,6 +202,7 @@ func main() {
 	go startServe()
 	go startMsgRouter()
 	http.HandleFunc("/", pageHandler)
+	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/im", wsHandler)
 	log.Fatal(http.ListenAndServe(LISTEN_ADDR, nil))
 }
