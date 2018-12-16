@@ -14,9 +14,11 @@ const (
 	Pong   Type = "pong"
 	Auth   Type = "auth"
 	Kick   Type = "kick"
+	Ret    Type = "ret"
 )
 
 type Message struct {
+	Id      string
 	Type    Type
 	RoomId  string
 	Sender  string
@@ -25,6 +27,7 @@ type Message struct {
 
 var PONG = &Message{Type: Pong}
 var KICK = &Message{Type: Kick}
+var OK = &Message{Type: Ret, Content: "ok"}
 
 func FromJson(b []byte) (*Message, error) {
 	var m Message

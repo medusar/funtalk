@@ -1,17 +1,17 @@
-package talk
+package server
 
 import (
 	"log"
 	"github.com/medusar/funtalk/message"
-	"html"
 	"github.com/medusar/funtalk/user"
+	"html"
 )
 
 var (
 	userEventChan = make(chan *user.Event, 1024)
 	//key: uid, value: User
 	userMap = make(map[string]*user.User)
-	roomMap = make(map[string]*user.Room)
+	roomMap = make(map[string]*Room)
 	//Message channel used to send messages to all the users
 	outboundMsgChan = make(chan *message.Message, 1024)
 )
@@ -31,6 +31,7 @@ func CloseUser(u *user.User) {
 	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " left room"}
 	//Update online user list
 	outboundMsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
+	removeFromRoom(u.Uid())
 	u.Close()
 }
 
@@ -44,17 +45,32 @@ func AddUser(u *user.User) {
 		oldUser.Close()
 
 		users[u.Uid()] = u
-		// Send welcome message to current user only
-		u.Write(&message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"})
-		// Update online user list to current user only
-		u.Write(&message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)})
 		return
 	}
 
 	users[u.Uid()] = u
-	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
-	// Update online user list
-	outboundMsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
+}
+
+func addToRoom(rid string, u *user.User) {
+	room, ok := roomMap[rid]
+	if !ok {
+		room = InitRoom(rid)
+		roomMap[rid] = room
+	}
+
+	if _, ok := room.Users[u.Uid()]; ok {
+		return
+	}
+
+	room.Users[u.Uid()] = true
+	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: rid, Sender: "admin", Content: u.Name() + " joined room"}
+	outboundMsgChan <- &message.Message{Type: message.Online, RoomId: rid, Sender: "admin", Content: OnlineList(userMap)}
+}
+
+func removeFromRoom(uid string) {
+	for _, room := range roomMap {
+		delete(room.Users, uid)
+	}
 }
 
 func StartWsService() {
@@ -75,14 +91,8 @@ func handleUser() {
 
 func startMsgRouter() {
 	for msg := range outboundMsgChan {
-		for _, u := range userMap {
-			if u.Name() == msg.Sender {
-				continue
-			}
-			if err := u.Write(msg); err != nil {
-				log.Println("error write msg", err)
-				userEventChan <- &user.Event{Type: user.Closed, User: u}
-			}
+		if room, ok := roomMap[msg.RoomId]; ok {
+			room.MsgChan <- msg
 		}
 	}
 }
@@ -116,7 +126,12 @@ func Serve(u *user.User) {
 				}
 			}
 		case message.Chat:
-			outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: u.Name(), Content: html.EscapeString(msg.Content.(string))}
+			sendToRoom(msg, u)
+			//TODO:return to notify client a success
+			//if err := u.Write(&message.Message{Type: message.Ret, Content: msg.Id}); err != nil {
+			//	log.Println("error write msg", err)
+			//	break
+			//}
 		case message.Ping:
 			if err := u.Write(message.PONG); err != nil {
 				log.Println("error write msg", err)
@@ -128,4 +143,15 @@ func Serve(u *user.User) {
 	}
 
 	userEventChan <- &user.Event{Type: user.Closed, User: u}
+}
+
+func sendToRoom(msg *message.Message, u *user.User) {
+	if msg.RoomId == "" {
+		//for test
+		msg.RoomId = "1"
+	}
+	//if user not in room, add to room
+	//TODO: add room when login
+	addToRoom(msg.RoomId, u)
+	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: msg.RoomId, Sender: u.Name(), Content: html.EscapeString(msg.Content.(string))}
 }

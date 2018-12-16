@@ -99,7 +99,7 @@
         if (data.trim().length == 0) {
             return;
         }
-        var msg = {Type: 'chat', Content: data};
+        var msg = {Type: 'chat', Content: data, RoomId:"1"};
         socket.send(JSON.stringify(msg));
         appendChat(username + ':' + escapeHtml(data));
 

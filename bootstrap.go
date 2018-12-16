@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/gorilla/websocket"
+	"github.com/medusar/funtalk/server"
 	"github.com/medusar/funtalk/service"
-	"github.com/medusar/funtalk/talk"
 	"github.com/medusar/funtalk/user"
 	"html/template"
 	"log"
@@ -37,7 +37,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go talk.Serve(u)
+	go server.Serve(u)
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +108,7 @@ func checkLogin(uid, password string) bool {
 }
 
 func main() {
-	talk.StartWsService()
+	server.StartWsService()
 	http.HandleFunc("/", pageHandler)
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/im", wsHandler)

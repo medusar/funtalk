@@ -24,3 +24,12 @@ func GetName(uid string) (string, error) {
 	}
 	return userInfo.Name, nil
 }
+
+func GetRooms(uid string) []string {
+	rooms, err := userStore.GetRooms(uid)
+	if err != nil {
+		log.Printf("error GetRooms, uid: %s, %v", uid, err)
+		return nil
+	}
+	return rooms
+}
