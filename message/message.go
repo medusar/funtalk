@@ -1,4 +1,4 @@
-package talk
+package message
 
 import (
 	"encoding/json"

@@ -1,11 +1,9 @@
 package talk
 
 import (
-	"time"
-	"github.com/gorilla/websocket"
 	"log"
+	"github.com/medusar/funtalk/message"
 	"html"
-	"errors"
 )
 
 var (
@@ -15,11 +13,12 @@ var (
 	UserCloseChan = make(chan *User, 100)
 	//Event fired when a user login twice, the first will ke kicked out
 	UserKickChan = make(chan *User, 10)
+
 	//Contain all the users connected
 	//key: user name, value: User
 	UserMap = make(map[string]*User)
 	//Message channel used to send messages to all the users
-	MsgChan = make(chan *Message, 100)
+	MsgChan = make(chan *message.Message, 100)
 )
 
 // Get all the online user names
@@ -34,9 +33,9 @@ func OnlineList(users map[string]*User) []string {
 func CloseUser(u *User) {
 	users := UserMap
 	delete(users, u.Name())
-	MsgChan <- &Message{Type: Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " left room"}
+	MsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " left room"}
 	//Update online user list
-	MsgChan <- &Message{Type: Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
+	MsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
 	u.Close()
 }
 
@@ -46,18 +45,25 @@ func AddUser(u *User) {
 	oldUser := users[u.Name()]
 	if oldUser != nil {
 		//close old channel
-		oldUser.MsgChan <- &Message{Type: Kick}
+		err := oldUser.Write(&message.Message{Type: message.Kick})
+		if err != nil {
+			//write failed
+			//TODO:
+			return
+		}
+
 		users[u.Name()] = u
 		// Send welcome message to current user only
-		u.MsgChan <- &Message{Type: Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
+		u.Write(&message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"})
 		// Update online user list to current user only
-		u.MsgChan <- &Message{Type: Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
+		u.Write(&message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)})
 		return
 	}
+
 	users[u.Name()] = u
-	MsgChan <- &Message{Type: Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
+	MsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
 	// Update online user list
-	MsgChan <- &Message{Type: Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
+	MsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
 }
 
 func StartWsService() {
@@ -82,90 +88,49 @@ func startMsgRouter() {
 			if u.Name() == msg.Sender {
 				continue
 			}
-			//in case it blocks, we use select to set a time limit
-			select {
-			case u.MsgChan <- msg:
-			case <-time.After(10 * time.Millisecond):
+			if err := u.Write(msg); err != nil {
+				log.Println("error write msg", err)
+				//TODO:
 			}
 		}
 	}
 }
 
 func Serve(user *User) {
-	go read(user)
-	go write(user)
-
-	//if no error occurs, it will block here
-	select {
-	case e := <-user.ErrChan:
-		log.Println("error chat", e)
-		UserCloseChan <- user
-	}
-
-}
-
-func write(user *User) {
 	for {
-		var err error
-
-		select {
-		case msg := <-user.MsgChan:
-			err = user.Con.WriteMessage(websocket.TextMessage, []byte(msg.ToJson()))
-		case <-time.After(15 * time.Second):
-			err = user.Con.WriteMessage(websocket.PingMessage, nil)
-		}
-
+		msg, err := user.Read()
 		if err != nil {
-			if err != websocket.ErrCloseSent {
-				log.Printf("error: %v, user: %v \n", err, user.Name())
-			}
-			user.ErrChan <- err
-			return
-		}
-	}
-}
-
-func read(user *User) {
-	for {
-		//Can also use `user.Con.ReadJSON()`
-		_, p, err := user.Con.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				log.Printf("error: %v, user-agent: %v \n", err, user.Name())
-			}
-			user.ErrChan <- err
+			log.Println("error read message from user", err, user.Name())
 			return
 		}
 
-		message, err := FromJson(p)
-		if err != nil {
-			log.Println("error unmarshalling json", err)
-			continue
-		}
-
-		if message.Type != Auth && !user.HasAuthed() {
-			log.Printf("unauthed user, message type:%v, user:%s", message.Type, user.String())
-			user.ErrChan <- errors.New("should auth first!")
+		messageType := msg.Type
+		if messageType != message.Auth && !user.HasAuthed() {
+			log.Printf("unauthed msg:%s \n", messageType)
 			return
 		}
 
-		switch message.Type {
-		case Auth:
-			//TODO: optimize
-			authParams := message.Content.(map[string]interface{})
+		switch messageType {
+		case message.Auth:
+			authParams := msg.Content.(map[string]interface{})
 			if authParams != nil {
 				username := authParams["username"].(string)
 				if username != "" {
 					user.SetName(username)
+					//TODO
 					UserOpenChan <- user
 				}
 			}
-		case Chat:
-			MsgChan <- &Message{Type: Chat, RoomId: "1", Sender: user.Name(), Content: html.EscapeString(message.Content.(string))}
-		case Ping:
-			user.MsgChan <- &Message{Type: Pong}
+		case message.Chat:
+			MsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: user.Name(), Content: html.EscapeString(msg.Content.(string))}
+		case message.Ping:
+			if err := user.Write(&message.Message{Type: message.Pong}); err != nil {
+				log.Println("error write msg", err)
+				//TODO:
+				break
+			}
 		default:
-			log.Println("unsupported message type:", message.Type)
+			log.Println("unsupported message type:", messageType)
 		}
 	}
 }

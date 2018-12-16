@@ -28,15 +28,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	conn.SetPongHandler(pongHandler)
-	user := &talk.User{Con: conn, MsgChan: make(chan *talk.Message, 100), ErrChan: make(chan error, 1)}
-	//TODO:make sure if this is needed
-	//go serve(user)
-	talk.Serve(user)
-}
 
-func pongHandler(_ string) error {
-	return nil
+	user, err := talk.InitUser(conn)
+	if err != nil {
+		log.Println("error init user", err)
+		return
+	}
+
+	go talk.Serve(user)
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request) {
