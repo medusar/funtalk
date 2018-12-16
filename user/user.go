@@ -1,25 +1,36 @@
-package talk
+package user
 
 import (
 	"github.com/gorilla/websocket"
 	"fmt"
-	"github.com/medusar/funtalk/connection"
 	"github.com/medusar/funtalk/message"
 )
 
+type EventType string
+
+const (
+	Authed EventType = "authed"
+	Closed EventType = "closed"
+)
+
+type Event struct {
+	User *User
+	Type EventType
+}
+
 //User connected
 type User struct {
-	con  *connection.Connection
+	con  *Connection
 	name string
 }
 
 func InitUser(wsCon *websocket.Conn) (*User, error) {
-	con, err := connection.Init(wsCon)
+	con, err := InitConn(wsCon)
 	if err != nil {
 		return nil, err
 	}
-	user := &User{con: con,}
-	return user, nil
+	u := &User{con: con,}
+	return u, nil
 }
 
 func (u *User) Name() string {

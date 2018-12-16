@@ -4,25 +4,19 @@ import (
 	"log"
 	"github.com/medusar/funtalk/message"
 	"html"
+	"github.com/medusar/funtalk/user"
 )
 
 var (
-	//Event fired when a user connected
-	UserOpenChan = make(chan *User, 100)
-	//Event fired when a user should be closed
-	UserCloseChan = make(chan *User, 100)
-	//Event fired when a user login twice, the first will ke kicked out
-	UserKickChan = make(chan *User, 10)
-
-	//Contain all the users connected
+	userEventChan = make(chan *user.Event, 1024)
 	//key: user name, value: User
-	UserMap = make(map[string]*User)
+	userMap = make(map[string]*user.User)
 	//Message channel used to send messages to all the users
-	MsgChan = make(chan *message.Message, 100)
+	outboundMsgChan = make(chan *message.Message, 1024)
 )
 
 // Get all the online user names
-func OnlineList(users map[string]*User) []string {
+func OnlineList(users map[string]*user.User) []string {
 	names := make([]string, 0, len(users))
 	for n := range users {
 		names = append(names, n)
@@ -30,27 +24,23 @@ func OnlineList(users map[string]*User) []string {
 	return names
 }
 
-func CloseUser(u *User) {
-	users := UserMap
+func CloseUser(u *user.User) {
+	users := userMap
 	delete(users, u.Name())
-	MsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " left room"}
+	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " left room"}
 	//Update online user list
-	MsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
+	outboundMsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
 	u.Close()
 }
 
-func AddUser(u *User) {
-	users := UserMap
+func AddUser(u *user.User) {
+	users := userMap
 
 	oldUser := users[u.Name()]
 	if oldUser != nil {
 		//close old channel
-		err := oldUser.Write(&message.Message{Type: message.Kick})
-		if err != nil {
-			//write failed
-			//TODO:
-			return
-		}
+		oldUser.Write(message.KICK)
+		oldUser.Close()
 
 		users[u.Name()] = u
 		// Send welcome message to current user only
@@ -61,9 +51,9 @@ func AddUser(u *User) {
 	}
 
 	users[u.Name()] = u
-	MsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
+	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
 	// Update online user list
-	MsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
+	outboundMsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
 }
 
 func StartWsService() {
@@ -72,65 +62,65 @@ func StartWsService() {
 }
 
 func handleUser() {
-	for {
-		select {
-		case u := <-UserOpenChan:
-			AddUser(u)
-		case du := <-UserCloseChan:
-			CloseUser(du)
+	for ue := range userEventChan {
+		switch ue.Type {
+		case user.Authed:
+			AddUser(ue.User)
+		case user.Closed:
+			CloseUser(ue.User)
 		}
 	}
 }
 
 func startMsgRouter() {
-	for msg := range MsgChan {
-		for _, u := range UserMap {
+	for msg := range outboundMsgChan {
+		for _, u := range userMap {
 			if u.Name() == msg.Sender {
 				continue
 			}
 			if err := u.Write(msg); err != nil {
 				log.Println("error write msg", err)
-				//TODO:
+				userEventChan <- &user.Event{Type: user.Closed, User: u}
 			}
 		}
 	}
 }
 
-func Serve(user *User) {
+func Serve(u *user.User) {
 	for {
-		msg, err := user.Read()
+		msg, err := u.Read()
 		if err != nil {
-			log.Println("error read message from user", err, user.Name())
-			return
+			log.Println("error user Read", err, u.Name())
+			break
 		}
 
-		messageType := msg.Type
-		if messageType != message.Auth && !user.HasAuthed() {
-			log.Printf("unauthed msg:%s \n", messageType)
-			return
+		msgType := msg.Type
+		if msgType != message.Auth && !u.HasAuthed() {
+			log.Printf("unauthed msg:%s \n", msgType)
+			break
 		}
 
-		switch messageType {
+		switch msgType {
 		case message.Auth:
 			authParams := msg.Content.(map[string]interface{})
 			if authParams != nil {
 				username := authParams["username"].(string)
 				if username != "" {
-					user.SetName(username)
-					//TODO
-					UserOpenChan <- user
+					u.SetName(username)
+					userEventChan <- &user.Event{Type: user.Authed, User: u}
 				}
 			}
 		case message.Chat:
-			MsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: user.Name(), Content: html.EscapeString(msg.Content.(string))}
+			outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: u.Name(), Content: html.EscapeString(msg.Content.(string))}
 		case message.Ping:
-			if err := user.Write(&message.Message{Type: message.Pong}); err != nil {
+			if err := u.Write(message.PONG); err != nil {
 				log.Println("error write msg", err)
-				//TODO:
 				break
 			}
 		default:
-			log.Println("unsupported message type:", messageType)
+			log.Println("unsupported message type:", msgType)
 		}
 	}
+
+	userEventChan <- &user.Event{Type: user.Closed, User: u}
 }

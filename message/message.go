@@ -5,23 +5,26 @@ import (
 	"log"
 )
 
-type MessageType string
+type Type string
 
 const (
-	Chat   MessageType = "chat"
-	Online MessageType = "online"
-	Ping   MessageType = "ping"
-	Pong   MessageType = "pong"
-	Auth   MessageType = "auth"
-	Kick   MessageType = "kick"
+	Chat   Type = "chat"
+	Online Type = "online"
+	Ping   Type = "ping"
+	Pong   Type = "pong"
+	Auth   Type = "auth"
+	Kick   Type = "kick"
 )
 
 type Message struct {
-	Type    MessageType
+	Type    Type
 	RoomId  string
 	Sender  string
 	Content interface{}
 }
+
+var PONG = &Message{Type: Pong}
+var KICK = &Message{Type: Kick}
 
 func FromJson(b []byte) (*Message, error) {
 	var m Message

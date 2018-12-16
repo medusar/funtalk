@@ -1,4 +1,4 @@
-package connection
+package user
 
 import (
 	"sync"
@@ -16,7 +16,7 @@ type Connection struct {
 	mutex           sync.Mutex
 }
 
-func Init(wsCon *websocket.Conn) (*Connection, error) {
+func InitConn(wsCon *websocket.Conn) (*Connection, error) {
 	con := &Connection{
 		wsCon:           wsCon,
 		inboundMsgChan:  make(chan []byte, 1024),
@@ -69,7 +69,7 @@ func (c *Connection) readLoop() {
 	for {
 		_, b, err := c.wsCon.ReadMessage()
 		if err != nil {
-			log.Println("error read msg", err)
+			log.Println("error ws ReadMessage", err)
 			c.Close()
 			break
 		}
@@ -88,6 +88,7 @@ func (c *Connection) writeLoop() {
 		select {
 		case msg := <-c.outboundMsgChan:
 			if err := c.wsCon.WriteMessage(websocket.TextMessage, msg); err != nil {
+				log.Println("error ws WriteMessage", err)
 				c.Close()
 				break
 			}

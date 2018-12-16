@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/gorilla/websocket"
 	"github.com/medusar/funtalk/talk"
+	"github.com/medusar/funtalk/user"
 	"html/template"
 	"log"
 	"net/http"
@@ -29,13 +30,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := talk.InitUser(conn)
+	u, err := user.InitUser(conn)
 	if err != nil {
 		log.Println("error init user", err)
 		return
 	}
 
-	go talk.Serve(user)
+	go talk.Serve(u)
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request) {
