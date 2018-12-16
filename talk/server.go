@@ -9,8 +9,9 @@ import (
 
 var (
 	userEventChan = make(chan *user.Event, 1024)
-	//key: user name, value: User
+	//key: uid, value: User
 	userMap = make(map[string]*user.User)
+	roomMap = make(map[string]*user.Room)
 	//Message channel used to send messages to all the users
 	outboundMsgChan = make(chan *message.Message, 1024)
 )
@@ -42,7 +43,7 @@ func AddUser(u *user.User) {
 		oldUser.Write(message.KICK)
 		oldUser.Close()
 
-		users[u.Name()] = u
+		users[u.Uid()] = u
 		// Send welcome message to current user only
 		u.Write(&message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"})
 		// Update online user list to current user only
@@ -50,7 +51,7 @@ func AddUser(u *user.User) {
 		return
 	}
 
-	users[u.Name()] = u
+	users[u.Uid()] = u
 	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " joined room"}
 	// Update online user list
 	outboundMsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
@@ -104,10 +105,14 @@ func Serve(u *user.User) {
 		case message.Auth:
 			authParams := msg.Content.(map[string]interface{})
 			if authParams != nil {
-				username := authParams["username"].(string)
-				if username != "" {
-					u.SetName(username)
+				uid := authParams["uid"].(string)
+				if uid != "" {
+					u.SetUid(uid)
+					u.SetName(authParams["name"].(string))
 					userEventChan <- &user.Event{Type: user.Authed, User: u}
+				} else {
+					log.Println("error auth, close connection")
+					break
 				}
 			}
 		case message.Chat:

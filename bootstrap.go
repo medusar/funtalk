@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gorilla/websocket"
+	"github.com/medusar/funtalk/service"
 	"github.com/medusar/funtalk/talk"
 	"github.com/medusar/funtalk/user"
 	"html/template"
@@ -40,13 +41,21 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("username")
+	cookie, err := r.Cookie("uid")
 	if err != nil {
 		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
 		return
 	}
-	username := cookie.Value
-	err = templates.ExecuteTemplate(w, "chat.html", username)
+	uid := cookie.Value
+	item := make(map[string]string)
+	item["Uid"] = uid
+	name, err := service.GetName(uid)
+	if err != nil {
+		log.Printf("error GetName, uid:%s, %v", uid, err)
+		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+	}
+	item["Name"] = name
+	err = templates.ExecuteTemplate(w, "chat.html", item)
 	if err != nil {
 		log.Println(err)
 	}
@@ -74,8 +83,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	form := r.Form
-	username := form["username"]
-	if username == nil || len(username) == 0 || username[0] == "" {
+	uid := form["uid"]
+	if uid == nil || len(uid) == 0 || uid[0] == "" {
 		http.Error(w, "illegal arguments", http.StatusBadRequest)
 		return
 	}
@@ -85,8 +94,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if checkLogin(username[0], password[0]) {
-		http.SetCookie(w, &http.Cookie{Name: "username", Value: username[0], MaxAge: 24 * 60 * 60})
+	if checkLogin(uid[0], password[0]) {
+		http.SetCookie(w, &http.Cookie{Name: "uid", Value: uid[0], MaxAge: 24 * 60 * 60})
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 	} else {
 		//TODO: improve user experience
@@ -94,9 +103,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func checkLogin(username, password string) bool {
-	//TODO: check username and password
-	return true
+func checkLogin(uid, password string) bool {
+	return service.CheckUserPassrod(uid, password)
 }
 
 func main() {

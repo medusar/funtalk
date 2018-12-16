@@ -20,6 +20,7 @@ type Event struct {
 
 //User connected
 type User struct {
+	uid  string
 	con  *Connection
 	name string
 }
@@ -39,6 +40,14 @@ func (u *User) Name() string {
 
 func (u *User) SetName(name string) {
 	u.name = name
+}
+
+func (u *User) Uid() string {
+	return u.uid
+}
+
+func (u *User) SetUid(uid string) {
+	u.uid = uid
 }
 
 // If user has authed, his name will be set

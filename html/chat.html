@@ -61,7 +61,9 @@
         $(".container-fluid").height(height);
     });
 
-    var username = {{.}}
+    var uid = {{.Uid}}
+    var username = {{.Name}}
+
     var kick = false;
     var pingTask;
     var socket = new WebSocket('ws://localhost:8080/im');
@@ -88,7 +90,7 @@
     };
 
     function sendAuth() {
-        var msg = {Type: 'auth', Content: {username: username}};
+        var msg = {Type: 'auth', Content: {uid: uid, name: username}};
         socket.send(JSON.stringify(msg));
     }
 
