@@ -7,7 +7,10 @@ import (
 
 var userStore = storage.NewUserRedisStore(":6379")
 
-func CheckPassword(uid, password string) bool {
+type UserService struct {
+}
+
+func (us *UserService) CheckPassword(uid, password string) bool {
 	userInfo, err := userStore.Get(uid)
 	if err != nil {
 		log.Println("error Get by uid", err)
@@ -16,7 +19,7 @@ func CheckPassword(uid, password string) bool {
 	return userInfo.Password == password
 }
 
-func GetName(uid string) (string, error) {
+func (us *UserService) GetName(uid string) (string, error) {
 	userInfo, err := userStore.Get(uid)
 	if err != nil {
 		log.Println("error Get by uid", err)
@@ -25,7 +28,7 @@ func GetName(uid string) (string, error) {
 	return userInfo.Name, nil
 }
 
-func GetRooms(uid string) []string {
+func (us *UserService) GetRooms(uid string) []string {
 	rooms, err := userStore.GetRooms(uid)
 	if err != nil {
 		log.Printf("error GetRooms, uid: %s, %v", uid, err)

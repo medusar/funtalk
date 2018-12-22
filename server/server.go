@@ -11,8 +11,9 @@ import (
 var (
 	userEventChan = make(chan *user.Event, 1024)
 	//key: uid, value: User
-	userMap = make(map[string]*user.User)
-	roomMap = make(map[string]*Room)
+	userMap     = make(map[string]*user.User)
+	roomMap     = make(map[string]*Room)
+	userService service.UserService
 )
 
 func closeUser(u *user.User) {
@@ -130,7 +131,7 @@ func auth(msg *message.Message, u *user.User) error {
 	}
 	u.SetUid(uid)
 	u.SetName(params["name"].(string))
-	roomIds := service.GetRooms(uid)
+	roomIds := userService.GetRooms(uid)
 	u.SetRoomIds(roomIds)
 	return nil
 }

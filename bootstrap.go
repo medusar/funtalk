@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gorilla/websocket"
+	"github.com/medusar/funtalk/api"
 	"github.com/medusar/funtalk/server"
 	"github.com/medusar/funtalk/service"
 	"github.com/medusar/funtalk/user"
@@ -19,6 +20,8 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 	CheckOrigin:     checkOrigin,
 }
+
+var userService service.UserService
 
 func checkOrigin(_ *http.Request) bool {
 	return true
@@ -49,7 +52,7 @@ func pageHandler(w http.ResponseWriter, r *http.Request) {
 	uid := cookie.Value
 	item := make(map[string]string)
 	item["Uid"] = uid
-	name, err := service.GetName(uid)
+	name, err := userService.GetName(uid)
 	if err != nil {
 		log.Printf("error GetName, uid:%s, %v", uid, err)
 		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
@@ -104,13 +107,21 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func checkLogin(uid, password string) bool {
-	return service.CheckPassword(uid, password)
+	return userService.CheckPassword(uid, password)
 }
 
 func main() {
 	server.StartWsService()
-	http.HandleFunc("/", pageHandler)
-	http.HandleFunc("/login", loginHandler)
-	http.HandleFunc("/im", wsHandler)
-	log.Fatal(http.ListenAndServe(LISTEN_ADDR, nil))
+
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", pageHandler)
+	mux.HandleFunc("/login", loginHandler)
+	mux.HandleFunc("/im", wsHandler)
+
+	mux.Handle("/api/user/", &api.UserApi{})
+	//mux.Handle("/api/user", &api.UserApi{})
+	mux.Handle("/api/room/", &api.RoomApi{})
+
+	log.Fatal(http.ListenAndServe(LISTEN_ADDR, mux))
 }

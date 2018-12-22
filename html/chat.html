@@ -123,7 +123,6 @@
             appendChat(msg.sender + ':' + msg.content);
         } else if (msg.type == 'online') {
             let _html = '';
-            // '<li class="list-group-item">' + k + '</li>'
             msg.content.forEach(k => _html += '<li class="list-group-item">' + k + '</li>');
             $("#onlineList").html(_html);
         } else if (msg.type == 'pong') {
