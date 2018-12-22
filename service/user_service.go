@@ -7,7 +7,7 @@ import (
 
 var userStore = storage.NewUserRedisStore(":6379")
 
-func CheckUserPassrod(uid, password string) bool {
+func CheckPassword(uid, password string) bool {
 	userInfo, err := userStore.Get(uid)
 	if err != nil {
 		log.Println("error Get by uid", err)
@@ -29,7 +29,7 @@ func GetRooms(uid string) []string {
 	rooms, err := userStore.GetRooms(uid)
 	if err != nil {
 		log.Printf("error GetRooms, uid: %s, %v", uid, err)
-		return nil
+		return make([]string, 0)
 	}
 	return rooms
 }

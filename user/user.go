@@ -20,9 +20,10 @@ type Event struct {
 
 //User connected
 type User struct {
-	uid  string
-	con  *Connection
-	name string
+	uid     string
+	con     *Connection
+	name    string
+	roomIds map[string]bool
 }
 
 func InitUser(wsCon *websocket.Conn) (*User, error) {
@@ -30,7 +31,7 @@ func InitUser(wsCon *websocket.Conn) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	u := &User{con: con,}
+	u := &User{con: con, roomIds: make(map[string]bool)}
 	return u, nil
 }
 
@@ -48,6 +49,16 @@ func (u *User) Uid() string {
 
 func (u *User) SetUid(uid string) {
 	u.uid = uid
+}
+
+func (u *User) SetRoomIds(roomIds []string) {
+	for _, rid := range roomIds {
+		u.roomIds[rid] = true
+	}
+}
+
+func (u *User) RoomIds() map[string]bool {
+	return u.roomIds
 }
 
 // If user has authed, his name will be set

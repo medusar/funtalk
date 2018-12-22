@@ -72,6 +72,7 @@ func (urs *UserRedisStore) Get(uid string) (*UserInfo, error) {
 		return nil, errors.New("user not exists")
 	}
 
+	//TODO: use reflect
 	u := &UserInfo{
 		Uid:      uid,
 		Name:     hash["name"],
@@ -85,6 +86,7 @@ func (urs *UserRedisStore) Set(uid string, u *UserInfo) error {
 	conn := urs.pool.Get()
 	defer conn.Close()
 
+	//TODO: use reflect
 	params := make([]interface{}, 5)
 	params[0] = "user:" + uid + ":info"
 	params[1] = "name"

@@ -90,7 +90,7 @@
     };
 
     function sendAuth() {
-        var msg = {Type: 'auth', Content: {uid: uid, name: username}};
+        var msg = {type: 'auth', content: {uid: uid, name: username}};
         socket.send(JSON.stringify(msg));
     }
 
@@ -99,7 +99,7 @@
         if (data.trim().length == 0) {
             return;
         }
-        var msg = {Type: 'chat', Content: data, RoomId:"1"};
+        var msg = {type: 'chat', content: data, roomId:"1"};
         socket.send(JSON.stringify(msg));
         appendChat(username + ':' + escapeHtml(data));
 
@@ -108,7 +108,7 @@
 
     function ping() {
         if (socket && socket.readyState == WebSocket.OPEN) {
-            socket.send('{"Type":"ping"}');
+            socket.send('{"type":"ping"}');
         }
     }
 
@@ -119,17 +119,17 @@
     //{"Type":"chat","RoomId":"1","Sender":"admin","Content":"127.0.0.1:49521 joined room"}
     function handleMessage(msgJson) {
         var msg = JSON.parse(msgJson);
-        if (msg.Type == 'chat') {
-            appendChat(msg.Sender + ':' + msg.Content);
-        } else if (msg.Type == 'online') {
+        if (msg.type == 'chat') {
+            appendChat(msg.sender + ':' + msg.content);
+        } else if (msg.type == 'online') {
             let _html = '';
             // '<li class="list-group-item">' + k + '</li>'
-            msg.Content.forEach(k => _html += '<li class="list-group-item">' + k + '</li>');
+            msg.content.forEach(k => _html += '<li class="list-group-item">' + k + '</li>');
             $("#onlineList").html(_html);
-        } else if (msg.Type == 'pong') {
+        } else if (msg.type == 'pong') {
             console.info("pong received")
             //no op
-        } else if (msg.Type == 'kick') {
+        } else if (msg.type == 'kick') {
             alert('you are kicked by another client');
             kick = true;
             socket.close()

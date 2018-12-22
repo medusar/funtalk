@@ -8,8 +8,11 @@ import (
 )
 
 type Connection struct {
+	// underlying ws channel
 	wsCon           *websocket.Conn
+	// store messages read from wsChan
 	inboundMsgChan  chan []byte
+	// store messages to be send to wsChan
 	outboundMsgChan chan []byte
 	closeChan       chan byte
 	closed          bool

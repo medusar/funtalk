@@ -18,11 +18,12 @@ const (
 )
 
 type Message struct {
-	Id      string
-	Type    Type
-	RoomId  string
-	Sender  string
-	Content interface{}
+	Id         string      `json:"id,omitempty"`
+	Type       Type        `json:"type,omitempty"`
+	RoomId     string      `json:"roomId,omitempty"`
+	Sender     string      `json:"sender,omitempty"`
+	SenderName string      `json:"senderName,omitempty"`
+	Content    interface{} `json:"content,omitempty"`
 }
 
 var PONG = &Message{Type: Pong}

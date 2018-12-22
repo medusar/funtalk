@@ -4,7 +4,8 @@ import (
 	"log"
 	"github.com/medusar/funtalk/message"
 	"github.com/medusar/funtalk/user"
-	"html"
+	"github.com/medusar/funtalk/service"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -12,87 +13,60 @@ var (
 	//key: uid, value: User
 	userMap = make(map[string]*user.User)
 	roomMap = make(map[string]*Room)
-	//Message channel used to send messages to all the users
-	outboundMsgChan = make(chan *message.Message, 1024)
 )
 
-// Get all the online user names
-func OnlineList(users map[string]*user.User) []string {
-	names := make([]string, 0, len(users))
-	for n := range users {
-		names = append(names, n)
-	}
-	return names
-}
-
-func CloseUser(u *user.User) {
+func closeUser(u *user.User) {
 	users := userMap
-	delete(users, u.Name())
-	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: "1", Sender: "admin", Content: u.Name() + " left room"}
-	//Update online user list
-	outboundMsgChan <- &message.Message{Type: message.Online, RoomId: "1", Sender: "admin", Content: OnlineList(users)}
-	removeFromRoom(u.Uid())
+	delete(users, u.Uid())
+
+	for rid := range u.RoomIds() {
+		if room, ok := roomMap[rid]; ok {
+			room.DelUser(u.Uid())
+		}
+	}
+
 	u.Close()
 }
 
-func AddUser(u *user.User) {
-	users := userMap
+func getOrCreateRoom(rid string) *Room {
+	if room, ok := roomMap[rid]; ok {
+		return room
+	}
+	room := InitRoom(rid)
+	roomMap[rid] = room
+	log.Printf("room created, rid:%s", rid)
+	return room
+}
 
-	oldUser := users[u.Name()]
-	if oldUser != nil {
+func addUser(u *user.User) {
+	users := userMap
+	uid := u.Uid()
+
+	if oldUser, ok := users[uid]; ok {
 		//close old channel
 		oldUser.Write(message.KICK)
 		oldUser.Close()
-
-		users[u.Uid()] = u
-		return
 	}
+	users[uid] = u
 
-	users[u.Uid()] = u
-}
-
-func addToRoom(rid string, u *user.User) {
-	room, ok := roomMap[rid]
-	if !ok {
-		room = InitRoom(rid)
-		roomMap[rid] = room
-	}
-
-	if _, ok := room.Users[u.Uid()]; ok {
-		return
-	}
-
-	room.Users[u.Uid()] = true
-	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: rid, Sender: "admin", Content: u.Name() + " joined room"}
-	outboundMsgChan <- &message.Message{Type: message.Online, RoomId: rid, Sender: "admin", Content: OnlineList(userMap)}
-}
-
-func removeFromRoom(uid string) {
-	for _, room := range roomMap {
-		delete(room.Users, uid)
+	//add room info
+	for roomId := range u.RoomIds() {
+		room := getOrCreateRoom(roomId)
+		room.AddUser(uid)
 	}
 }
 
 func StartWsService() {
-	go handleUser()
-	go startMsgRouter()
+	go loopUserEvent()
 }
 
-func handleUser() {
+func loopUserEvent() {
 	for ue := range userEventChan {
 		switch ue.Type {
 		case user.Authed:
-			AddUser(ue.User)
+			addUser(ue.User)
 		case user.Closed:
-			CloseUser(ue.User)
-		}
-	}
-}
-
-func startMsgRouter() {
-	for msg := range outboundMsgChan {
-		if room, ok := roomMap[msg.RoomId]; ok {
-			room.MsgChan <- msg
+			closeUser(ue.User)
 		}
 	}
 }
@@ -113,25 +87,24 @@ func Serve(u *user.User) {
 
 		switch msgType {
 		case message.Auth:
-			authParams := msg.Content.(map[string]interface{})
-			if authParams != nil {
-				uid := authParams["uid"].(string)
-				if uid != "" {
-					u.SetUid(uid)
-					u.SetName(authParams["name"].(string))
-					userEventChan <- &user.Event{Type: user.Authed, User: u}
-				} else {
-					log.Println("error auth, close connection")
-					break
-				}
+			if err := auth(msg, u); err != nil {
+				log.Println("error auth", err)
+				break
+			}
+			userEventChan <- &user.Event{Type: user.Authed, User: u}
+			if err := u.Write(message.OK); err != nil {
+				log.Println("error write msg", err)
+				break
 			}
 		case message.Chat:
-			sendToRoom(msg, u)
-			//TODO:return to notify client a success
-			//if err := u.Write(&message.Message{Type: message.Ret, Content: msg.Id}); err != nil {
-			//	log.Println("error write msg", err)
-			//	break
-			//}
+			if err := sendToRoom(msg, u); err != nil {
+				log.Printf("error chat, uid:%s, err:%+v", u.Uid(), err)
+				break
+			}
+			if err := u.Write(message.OK); err != nil {
+				log.Println("error write msg", err)
+				break
+			}
 		case message.Ping:
 			if err := u.Write(message.PONG); err != nil {
 				log.Println("error write msg", err)
@@ -142,16 +115,39 @@ func Serve(u *user.User) {
 		}
 	}
 
+	// some error has occurred, close the channel
 	userEventChan <- &user.Event{Type: user.Closed, User: u}
 }
 
-func sendToRoom(msg *message.Message, u *user.User) {
-	if msg.RoomId == "" {
-		//for test
-		msg.RoomId = "1"
+func auth(msg *message.Message, u *user.User) error {
+	params, ok := msg.Content.(map[string]interface{})
+	if !ok {
+		return errors.New("error auth, illegal Content")
 	}
-	//if user not in room, add to room
-	//TODO: add room when login
-	addToRoom(msg.RoomId, u)
-	outboundMsgChan <- &message.Message{Type: message.Chat, RoomId: msg.RoomId, Sender: u.Name(), Content: html.EscapeString(msg.Content.(string))}
+	uid, ok := params["uid"].(string)
+	if !ok || uid == "" {
+		return errors.New("error auth, illegal params")
+	}
+	u.SetUid(uid)
+	u.SetName(params["name"].(string))
+	roomIds := service.GetRooms(uid)
+	u.SetRoomIds(roomIds)
+	return nil
+}
+
+func sendToRoom(msg *message.Message, u *user.User) error {
+	rid := msg.RoomId
+	if rid == "" {
+		return errors.New("msg roomid is empty")
+	}
+	if _, ok := u.RoomIds()[rid]; !ok {
+		return errors.New("user not in room:" + rid)
+	}
+	log.Printf("send msg to room: %v", msg)
+
+	msg.Sender = u.Uid()
+	msg.SenderName = u.Name()
+
+	roomMap[rid].Send(msg)
+	return nil
 }

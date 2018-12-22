@@ -104,7 +104,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func checkLogin(uid, password string) bool {
-	return service.CheckUserPassrod(uid, password)
+	return service.CheckPassword(uid, password)
 }
 
 func main() {
