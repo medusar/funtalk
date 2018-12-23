@@ -44,18 +44,19 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("uid")
+	uid, err := api.ValidateHttpCookie(r)
 	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+		log.Printf("error cookie: %v", err)
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	uid := cookie.Value
+
 	item := make(map[string]string)
 	item["Uid"] = uid
 	name, err := userService.GetName(uid)
 	if err != nil {
 		log.Printf("error GetName, uid:%s, %v", uid, err)
-		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	}
 	item["Name"] = name
 	err = templates.ExecuteTemplate(w, "chat.html", item)
@@ -97,17 +98,17 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if checkLogin(uid[0], password[0]) {
-		http.SetCookie(w, &http.Cookie{Name: "uid", Value: uid[0], MaxAge: 24 * 60 * 60})
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	if userService.CheckPassword(uid[0], password[0]) {
+		err := api.SetCookie(uid[0], w, r)
+		if err != nil {
+			http.Error(w, "illegal arguments", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
 		//TODO: improve user experience
 		http.Error(w, "illegal arguments", http.StatusBadRequest)
 	}
-}
-
-func checkLogin(uid, password string) bool {
-	return userService.CheckPassword(uid, password)
 }
 
 func main() {

@@ -13,7 +13,7 @@
     <div class="row" style="height:70%;">
         <div class="h-100 col-9 col-md-9">
             <div class="h-100 card">
-                <div class="card-header">ChatGround</div>
+                <div class="card-header" id="roomInfo">Room: hello</div>
                 <div class="card-body">
                     <div id="chatDiv">
 
@@ -23,10 +23,10 @@
         </div>
         <div class="h-100 col-3 col-md-3 pl-0">
             <div class="h-100 card">
-                <div class="card-header">Online Users</div>
+                <div class="card-header">Avaliable Rooms</div>
                 <div class="card-body">
                     <div>
-                        <ul class="list-group" id="onlineList">
+                        <ul class="list-group" id="roomList">
                         </ul>
                     </div>
                 </div>
@@ -51,6 +51,7 @@
     if (!window.WebSocket) {
         window.WebSocket = window.MozWebSocket;
     }
+
     $(function () {
         $(document).keyup(function (event) {
             if (event.keyCode == 13) {
@@ -59,6 +60,14 @@
         });
         let height = $(window).height();
         $(".container-fluid").height(height);
+
+        $.getJSON('/api/user/info',function(data){
+
+        });
+
+        $.getJSON('/api/room/list',function(data){
+            
+        });
     });
 
     var uid = {{.Uid}}
@@ -101,7 +110,7 @@
         }
         var msg = {type: 'chat', content: data, roomId:"1"};
         socket.send(JSON.stringify(msg));
-        appendChat(username + ':' + escapeHtml(data));
+        // appendChat(username + ':' + escapeHtml(data));
 
         $("#chatData").val('');
     }

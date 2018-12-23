@@ -3,9 +3,15 @@ package service
 import (
 	"github.com/medusar/funtalk/storage"
 	"log"
+	"math/rand"
+	"time"
 )
 
 var userStore = storage.NewUserRedisStore(":6379")
+
+func init() {
+	rand.Seed(time.Now().Unix())
+}
 
 type UserService struct {
 }
